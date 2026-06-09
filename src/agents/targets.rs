@@ -1,0 +1,9 @@
+pub const GH_CONFIG_TARGET: &str = "/home/orbit/.config/gh";
+pub const GH_HOSTS_TARGET: &str = "/home/orbit/.config/gh/hosts.yml";
+pub const SSH_HOME_TARGET: &str = "/home/orbit/.ssh";
+pub const GNUPG_HOME_TARGET: &str = "/home/orbit/.gnupg";
+pub const GITCONFIG_TARGET: &str = "/home/orbit/.gitconfig";
+pub const GIT_CONFIG_DIR_TARGET: &str = "/home/orbit/.config/git";
+pub const GIT_HOOKS_TARGET: &str = "/home/orbit/.git-hooks";
+pub const SSH_AUTH_SOCK_TARGET: &str = "/run/host-ssh-agent.sock";
+pub const GPG_AGENT_SOCK_TARGET: &str = "/run/host-gpg-agent.sock";

@@ -1,0 +1,138 @@
+{
+  "stage": "interview",
+  "title": "Orbit structural refactor",
+  "goalSlug": "orbit-structural-refactor",
+  "questions": [
+    {
+      "id": "scope-priority",
+      "prompt": "Which refactor scope should this goal cover first?",
+      "description": "Repo is a Rust CLI. Biggest concentration is src/cli.rs (~1836 lines), src/agents.rs (~1997), src/runner.rs (~2079), and tests/acceptance.rs (~3344).",
+      "answerMode": "single-custom",
+      "recommendedAnswer": "Refactor whole codebase, but prioritize the large high-churn modules first: cli, agents, runner, acceptance tests. Leave tiny stable modules alone unless needed for clean boundaries.",
+      "recommendedOptionIds": ["prioritized-whole"],
+      "options": [
+        {
+          "id": "prioritized-whole",
+          "label": "Whole repo, prioritized hotspots first"
+        },
+        {
+          "id": "hotspots-only",
+          "label": "Only split large hotspot files"
+        },
+        {
+          "id": "all-modules",
+          "label": "Touch every module for consistent structure"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "compatibility",
+      "prompt": "How strict should compatibility be while refactoring?",
+      "description": "Current CLI has stable dry-run output, explain JSON, mount/network/security refusals, image build behavior, and agent alias behavior covered by tests.",
+      "answerMode": "single-custom",
+      "recommendedAnswer": "Strict compatibility: no intentional CLI, JSON, dry-run text, security policy, image build, or runtime behavior changes. Private Rust APIs may move/rename if tests and public behavior stay equivalent.",
+      "recommendedOptionIds": ["strict"],
+      "options": [
+        {
+          "id": "strict",
+          "label": "Strict public behavior compatibility"
+        },
+        {
+          "id": "small-cleanups",
+          "label": "Allow small user-visible cleanups if documented"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "target-structure",
+      "prompt": "What structure should the refactor move toward?",
+      "description": "Architecture docs currently prefer flat modules and warn against premature abstractions. This goal can introduce submodules where real domains already exist.",
+      "answerMode": "multi-custom",
+      "recommendedAnswer": "Extract domain-focused submodules without deep trait/plugin systems: CLI parsing vs plan building vs git metadata, agent aliases vs Pi state vs identity/socket mounts, runner execution vs copy/symlink filtering vs auth/proxy setup, acceptance tests split by behavior domain.",
+      "recommendedOptionIds": ["cli-domains", "agent-domains", "runner-domains", "test-domains"],
+      "options": [
+        {
+          "id": "cli-domains",
+          "label": "Split CLI parsing/plan/git/product-command concerns"
+        },
+        {
+          "id": "agent-domains",
+          "label": "Split agent aliases/Pi state/identity/socket concerns"
+        },
+        {
+          "id": "runner-domains",
+          "label": "Split runner execution/copy/auth/proxy/cleanup concerns"
+        },
+        {
+          "id": "test-domains",
+          "label": "Split acceptance tests by behavior domain"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "test-expectations",
+      "prompt": "What testing bar should define success?",
+      "description": "Current suite has unit tests plus one large acceptance file. User request says preserve scenarios, refactor tests, and add missing ones.",
+      "answerMode": "multi-custom",
+      "recommendedAnswer": "Keep every existing scenario, split tests into domain files/helpers, add characterization tests before risky moves, add missing coverage for extracted boundaries, and require fmt, clippy -D warnings, cargo test --locked, diff check, and key dry-run/explain smoke commands.",
+      "recommendedOptionIds": ["preserve", "split", "characterization", "missing", "full-gate"],
+      "options": [
+        {
+          "id": "preserve",
+          "label": "Preserve all existing scenarios"
+        },
+        {
+          "id": "split",
+          "label": "Split tests/helpers by domain"
+        },
+        {
+          "id": "characterization",
+          "label": "Add characterization tests before risky moves"
+        },
+        {
+          "id": "missing",
+          "label": "Add missing unit/acceptance coverage for new boundaries"
+        },
+        {
+          "id": "full-gate",
+          "label": "Require full local verification gate"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "out-of-scope",
+      "prompt": "What should be explicitly out of scope?",
+      "description": "Narrow out-of-scope choices reduce accidental feature work during broad refactor.",
+      "answerMode": "multi-custom",
+      "recommendedAnswer": "No new product features, no security-policy relaxations, no Docker image/toolchain changes beyond compile-required path updates, no public CLI/docs behavior changes except structure docs, no deep generic framework or plugin architecture.",
+      "recommendedOptionIds": ["features", "policy", "image", "public-docs", "framework"],
+      "options": [
+        {
+          "id": "features",
+          "label": "No new product features"
+        },
+        {
+          "id": "policy",
+          "label": "No policy/security relaxations"
+        },
+        {
+          "id": "image",
+          "label": "No image/toolchain behavior changes"
+        },
+        {
+          "id": "public-docs",
+          "label": "No public CLI/docs behavior changes except structure docs"
+        },
+        {
+          "id": "framework",
+          "label": "No deep framework/plugin architecture"
+        }
+      ],
+      "required": true
+    }
+  ]
+}
