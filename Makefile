@@ -1,9 +1,16 @@
-.PHONY: build dogfood
+.PHONY: build test lint check image
 
 build:
 	cargo build --locked
-	cargo install --path . --locked
-	cargo run --locked -- image build --no-host-mise-tools
 
-dogfood:
-	orbit pi "say hi"
+test:
+	cargo test --locked
+
+lint:
+	cargo fmt --check
+	cargo clippy --all-targets -- -D warnings
+
+check: lint test
+
+image:
+	cargo run --locked -- image build

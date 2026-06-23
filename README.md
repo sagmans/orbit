@@ -1,73 +1,83 @@
 # Orbit
 
-Orbit is a Rust CLI that runs coding-agent commands inside constrained containers with an auditable host-mount, network, and runtime-hardening policy.
+Run coding-agent CLIs inside hardened Docker containers with host-mount isolation.
 
-This branch (`feat/full-plan-implementation`) implements the containerized agent runner summarized in [SCOPE.md](SCOPE.md).
+## What it does
 
-## What is done
+Orbit wraps agents like `pi`, `opencode`, `codex`, `claude`, `amp`, `cursor-agent`, `agy`, and `gemini` in a Docker container that:
 
-- Generic command wrapper plus aliases: `pi`, `opencode`, `codex`, `claude`, `amp`, `cursor-agent`, `agy`, `gemini`.
-- Serializable run plan used by dry-run, explain, tests, and execution.
-- Docker command generation, OrbStack-compatible Docker mode, and Podman command surface.
-- Default-deny mount policy: no `$HOME`, root, Docker socket, broad parent paths, duplicate targets, symlink escapes, or mount grammar injection.
-- Runtime hardening: read-only rootfs, dropped caps, `no-new-privileges`, non-root app user, tmpfs runtime dirs.
-- Network modes: `none`, `open`, and `restricted` with domain allowlist and proxy-bypass checks.
-- Default agent home policy for supported agents: generic commands mount no agent state; agent aliases mount supported coding-agent top-level state dirs/files read-write with no subgroup mounts; shared Git/SSH/GPG identity stays read-only.
-- Pi adapter and audited SSH/GPG socket forwarding.
-- Product commands: `doctor`, `cleanup`, and `image build`.
-- Regression tests for mount, network, proxy redaction, signal cleanup, profiles, aliases, and explain output.
+- Mounts the current git workspace **read-write** so the agent can edit code
+- Mounts agent-specific `$HOME` directories (e.g. `~/.pi`, `~/.codex`, `~/.claude`) **read-write** so state persists
+- Mounts git/ssh/gpg identity (`~/.gitconfig`, `~/.ssh`, `~/.gnupg`) **read-only** for auth
+- Hardens the container: read-only rootfs, `cap-drop=ALL`, `no-new-privileges`, user `1000:1000`
+- Refuses to mount Docker sockets, root filesystem, `/etc`, `/proc`, `/sys`, or whole `$HOME`
 
 ## Quick start
 
 ```sh
 cargo build
-./target/debug/orbit image build --dry-run
-./target/debug/orbit --dry-run -- echo hi
-./target/debug/orbit explain -- pi --version
-./target/debug/orbit pi "say hi"
+./target/debug/orbit image build          # build the base image
+./target/debug/orbit pi                   # interactive Pi TUI
+./target/debug/orbit pi "say hi"          # headless Pi prompt
+./target/debug/orbit opencode             # interactive OpenCode
+./target/debug/orbit -- echo hello        # run any command
 ```
 
-Build the base image before real container execution:
+## Usage
 
-```sh
-./target/debug/orbit image build --no-host-mise-tools
-./target/debug/orbit -- echo hi
-./target/debug/orbit -- pi --version
-./target/debug/orbit pi
+```
+orbit [flags] <agent> [args...]    Run a known agent
+orbit [flags] -- <cmd...>          Run an arbitrary command
+orbit explain [flags] ...          Show the container plan without running
+orbit image build [flags]          Build the base container image
+orbit doctor                       Check engine availability
+orbit cleanup [--dry-run]          Remove stale orbit containers
 ```
 
-`orbit-agent:latest` installs pinned `mise`, all tools declared in host `~/.config/mise/config.toml` `[tools]` plus `gh` when absent (falling back to Node `24.16.0`, Rust `1.95.0`, and `gh` `2.93.0` when no host mise config exists or `--no-host-mise-tools` is set; host `node` entries must be `24.x`), `rg`, `fd`, `bubblewrap`/`bwrap`, `socat`, `sem`, `inspect-mcp`, and npm-backed agent CLIs (`opencode`, `codex`, `claude`, `amp`, `gemini`, plus `pi` from host `pi --version` by default). Use `--pi-version VERSION` to override or `--no-host-pi-version` to keep the Dockerfile fallback. Image builds do not read host Pi settings and do not bake host Pi packages. At runtime, agent aliases mount supported coding-agent top-level state dirs/files from the host read-write, including full `~/.pi` at `/home/orbit/.pi`; Orbit does not snapshot, sanitize, or subgroup those agent homes. Agent aliases with no args attach stdin/TTY automatically for TUI use. Orbit never adds extension-owned Pi flags automatically; pass Pi flags explicitly only when the container has that extension. `cursor-agent` and `agy` require vendor installers or a custom-derived image.
+**Agent aliases:** `pi`, `opencode`, `codex`, `claude`, `amp`, `cursor-agent`, `agy`, `gemini`
 
-Transparent local alias example:
+**Flags:**
+- `--dry-run` - print the docker command without executing
+- `-i, --interactive` - attach stdin and TTY (auto for no-arg agents)
+- `--engine docker|orbstack|podman|auto` - container engine (default: auto-detect)
+- `--network bridge|none` - network mode (default: bridge)
+- `--image TAG` - custom container image
+- `--workspace PATH` - git worktree root (default: auto-detected)
+- `--mount SRC:TGT[:ro|rw]` - additional bind mount
 
-```sh
-alias pi='orbit pi'
-pi          # interactive TUI
-pi "say hi" # headless prompt
+## Safety model
+
+| Concern | Policy |
+|---|---|
+| Docker socket | Never mounted (prevents container escape) |
+| Root filesystem | Never mounted |
+| `/etc`, `/proc`, `/sys`, `/dev` | Never mounted |
+| Whole `$HOME` | Never mounted (only specific agent dirs) |
+| Container rootfs | Read-only with tmpfs for `/tmp`, `/home/orbit` |
+| Capabilities | All dropped (`cap-drop=ALL`) |
+| Privileges | `no-new-privileges` set |
+| Container user | `1000:1000` (non-root) |
+| Mount grammar injection | Commas and control chars in paths refused |
+| Symlink escapes | Canonical paths checked against blocklist |
+
+Agent `$HOME` directories are mounted read-write so agents can read/write their state (settings, sessions, tokens). Git/SSH/GPG identity is mounted read-only.
+
+## Project structure
+
 ```
-
-Install the local binary when ready:
-
-```sh
-cargo install --path .
-orbit doctor
+src/
+  main.rs          - entry point
+  lib.rs           - module declarations
+  error.rs         - error types
+  plan.rs          - RunPlan and mount types
+  mount.rs         - mount policy, agent home mapping, workspace validation
+  docker.rs        - docker command generation
+  runner.rs        - container execution and signal handling
+  cli.rs           - CLI parsing, dispatch, explain, help
+  image_build.rs   - `orbit image build` command
+docker/
+  Dockerfile       - base image with Node.js and agent CLIs
+  entrypoint       - pass-through entrypoint
+tests/
+  integration.rs   - end-to-end CLI tests
 ```
-
-## Safety defaults
-
-- Engine: Docker by default.
-- Network: `restricted` by default with `registry.npmjs.org`, GitHub (`github.com` including API/SSH hosts), Linear API (`api.linear.app`), plus OpenAI Codex endpoints (`chatgpt.com`, `auth.openai.com`, `api.openai.com`) allowed for default agent/GitHub dogfooding; use `--network none` for fully offline runs or `--allow-domain` to extend the allowlist. The restricted proxy uses trusted `orbit-agent:latest` unless `--proxy-image` explicitly selects another trusted Orbit-derived image.
-- Workspace: current git worktree source root mounted read-write by default under `/home/orbit/<home-relative-suffix>` when it is a strict descendant of host `$HOME` (for example `/Users/sercans/source/me/orbit/main` -> `/home/orbit/source/me/orbit/main`), with non-HOME paths falling back to their absolute target. Git metadata (`.git`, linked-worktree git dirs, and common metadata dirs) follows the same mapping and is mounted writable so `git fetch`, upstream tracking, and PR workflows can update `FETCH_HEAD`, refs, and config.
-- Whole `$HOME`: never mounted.
-- Supported agent homes: generic commands mount no agent state; agent aliases mount supported coding-agent top-level state dirs/files read-write by default, including full `~/.pi`, `~/.codex`, `~/.claude`, `~/.config/gh`, and other listed agent homes. Orbit does not create managed subgroup mounts inside those homes; Pi extension entries that are absolute symlinks under `~/.pi/agent/extensions` get exact read-only target mounts so linked local extensions resolve. Credentials/config inside mounted homes are host-writable from the container. Agent aliases also mount Git identity/config (`~/.gitconfig`, `~/.config/git`, `~/.git-hooks`) plus full SSH/GPG homes (`~/.ssh`, `~/.gnupg`) read-only/redacted when present so host `IdentityFile`, `known_hosts`, and signing config resolve inside the container; valid SSH/GPG agent sockets are forwarded automatically for host-equivalent Git auth/signing, and Git SSH remotes route through the restricted proxy with `GIT_SSH_COMMAND`. When host `gh` stores a token in OS keyring, runtime stages an ephemeral writable/redacted `/home/orbit/.config/gh` with `gh auth token -h github.com`, then removes it in cleanup.
-- Writable paths: container tmpfs (`/tmp`, `/var/tmp`, `/home/orbit`), current source workspace, and audited Git metadata mounts.
-- App container hardening: read-only rootfs, `--cap-drop=ALL`, `no-new-privileges`, user `1000:1000`.
-- Base image starts from `debian:bookworm-slim`, installs pinned `mise`, `rg`, `fd`, `bubblewrap`/`bwrap`, `socat`, installs all host global mise `[tools]` from `~/.config/mise/config.toml` plus `gh` when absent under `/usr/local/etc/mise/config.toml` so `/home/orbit` tmpfs does not hide active tool versions, requires any host `node` entry to be 24.x, falls back to Node 24.16.0, Rust 1.95.0, and gh 2.93.0 when no host mise config exists or `--no-host-mise-tools` is set, passes host `pi --version` as the Pi npm package version by default, installs `sem`/`inspect-mcp` with cargo, and installs npm-backed agent CLIs. It never reads host Pi settings or preinstalls host Pi packages.
-
-## Documentation
-
-- [SCOPE.md](SCOPE.md) — current branch/worktree scope and completed work.
-- [ARCHITECTURE.md](ARCHITECTURE.md) — structure, data flow, and policy decisions.
-- [INSTALLATION.md](INSTALLATION.md) — requirements and install/build commands.
-- [USAGE.md](USAGE.md) — exact CLI commands, flags, and examples.
-- [DEVELOPMENT.md](DEVELOPMENT.md) — dev workflow, tests, and validation gates.
