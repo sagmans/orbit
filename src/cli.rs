@@ -172,15 +172,52 @@ fn build_plan_from_args(args: &[String]) -> Result<RunPlan> {
     let mounts = mount::build_mounts(&agent, &workspace, &opts.explicit_mounts)?;
     let cwd_target = mount::container_target(&workspace)?;
 
-    let env = vec![
+    let mut env = vec![
         ("HOME".to_string(), "/home/orbit".to_string()),
         (
             "PATH".to_string(),
-            "/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+            "/home/orbit/.local/share/mise/shims:/usr/local/mise/shims:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
                 .to_string(),
         ),
         ("TMPDIR".to_string(), "/home/orbit".to_string()),
+        // mise: pre-installed tools in system dir (read-only);
+        // user installs go to tmpfs under /home/orbit
+        (
+            "MISE_DATA_DIR".to_string(),
+            "/home/orbit/.local/share/mise".to_string(),
+        ),
+        // Config dir points to build-time global config (has tool versions).
+        // Read-only at runtime; users can use project-level mise.toml for overrides.
+        (
+            "MISE_CONFIG_DIR".to_string(),
+            "/usr/local/mise".to_string(),
+        ),
+        (
+            "MISE_CACHE_DIR".to_string(),
+            "/home/orbit/.cache/mise".to_string(),
+        ),
+        (
+            "MISE_SYSTEM_DATA_DIR".to_string(),
+            "/usr/local/mise".to_string(),
+        ),
+        // Preserve Rust env vars from the image
+        ("CARGO_HOME".to_string(), "/usr/local/cargo".to_string()),
+        ("RUSTUP_HOME".to_string(), "/usr/local/rustup".to_string()),
     ];
+
+    // Inject GH_TOKEN from host's gh auth (keyring not available in container)
+    if let Ok(token) = std::process::Command::new("gh")
+        .arg("auth")
+        .arg("token")
+        .output()
+    {
+        if token.status.success() {
+            let token_str = String::from_utf8_lossy(&token.stdout).trim().to_string();
+            if !token_str.is_empty() {
+                env.push(("GH_TOKEN".to_string(), token_str));
+            }
+        }
+    }
 
     Ok(RunPlan {
         engine: opts.engine,

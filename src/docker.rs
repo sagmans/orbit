@@ -78,7 +78,33 @@ pub fn command_args(plan: &RunPlan) -> Vec<String> {
 }
 
 pub fn dry_run_command(plan: &RunPlan) -> String {
-    shell_join(&command_args(plan))
+    let args = command_args(plan);
+    // Mask sensitive env var values for display safety
+    let masked: Vec<String> = args
+        .iter()
+        .map(|arg| {
+            if let Some(rest) = arg.strip_prefix("--env ") {
+                if let Some(eq_pos) = rest.find('=') {
+                    let name = &rest[..eq_pos];
+                    if is_sensitive_env(name) {
+                        return format!("--env {name}=***");
+                    }
+                }
+            }
+            arg.clone()
+        })
+        .collect();
+    shell_join(&masked)
+}
+
+/// Check if an env var name likely contains a secret value.
+fn is_sensitive_env(name: &str) -> bool {
+    let upper = name.to_uppercase();
+    upper.contains("TOKEN")
+        || upper.contains("SECRET")
+        || upper.contains("KEY")
+        || upper.contains("PASSWORD")
+        || upper.contains("CREDENTIAL")
 }
 
 pub fn shell_join(args: &[String]) -> String {

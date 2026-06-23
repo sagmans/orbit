@@ -21,6 +21,7 @@ RUN apt-get update \
         curl \
         git \
         fd-find \
+        jq \
         openssh-client \
         ripgrep \
         xz-utils \
@@ -60,6 +61,41 @@ RUN set -eux; \
     /usr/local/cargo/bin/rustc --version; \
     /usr/local/cargo/bin/cargo --version
 ENV PATH="/usr/local/cargo/bin:${PATH}"
+
+# Install mise (polyglot tool version manager) with pre-installed tools.
+# MISE_DATA_DIR points to /usr/local/mise (system-wide, survives tmpfs on /home/orbit).
+# At runtime, mise reads from here (read-only). Users can set MISE_DATA_DIR to a
+# writable tmpfs path to install additional tools.
+ENV MISE_DATA_DIR=/usr/local/mise
+ENV MISE_CONFIG_DIR=/usr/local/mise
+ENV MISE_CACHE_DIR=/usr/local/mise/cache
+ENV MISE_INSTALL_PATH=/usr/local/bin/mise
+ENV PATH="/usr/local/mise/shims:${PATH}"
+RUN curl -fsSL https://mise.run | sh \
+    && mise install uv python go \
+    && mise use -g uv python go \
+    && mise --version \
+    && uv --version \
+    && python --version \
+    && go version
+
+# Install GitHub CLI (gh) from official apt repo
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+        amd64|x86_64) gh_arch="amd64" ;; \
+        arm64|aarch64) gh_arch="arm64" ;; \
+        *) echo "unsupported arch: $arch"; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://cli.github.com/packages/githubcli-archive-keyring.gpg" \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg; \
+    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg; \
+    echo "deb [arch=${gh_arch} signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list; \
+    apt-get update; \
+    apt-get install -y gh; \
+    rm -rf /var/lib/apt/lists/*; \
+    gh --version
 
 # Install agent CLIs globally (binaries land in /usr/local/bin)
 RUN set -eux; \
